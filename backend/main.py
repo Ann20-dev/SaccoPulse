@@ -1,0 +1,246 @@
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Annotated, Literal
+from uuid import uuid4
+
+from fastapi import FastAPI, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = BASE_DIR / "frontend"
+
+
+class Driver(BaseModel):
+    id: str
+    name: str
+    route: str
+    phone: str
+    vehicle_plate: str
+    score: int = Field(ge=0, le=100)
+    reward_status: str = "Not rewarded"
+
+
+class ReportCreate(BaseModel):
+    category: Literal["overcharging", "reckless_driving", "vehicle_defect", "harassment", "other"]
+    route: str = Field(min_length=2, max_length=80)
+    vehicle_plate: str = Field(min_length=3, max_length=20)
+    description: str = Field(min_length=5, max_length=400)
+    severity: Literal["low", "medium", "high"]
+    reporter_phone: str | None = Field(default=None, max_length=30)
+
+
+class Report(ReportCreate):
+    id: str
+    created_at: str
+    status: str = "New"
+
+
+class Alert(BaseModel):
+    id: str
+    report_id: str
+    message: str
+    created_at: str
+    routed_to: str
+
+
+drivers: list[Driver] = [
+    Driver(
+        id="DRV-001",
+        name="Peter Mwangi",
+        route="CBD - Rongai",
+        phone="+254700111222",
+        vehicle_plate="KDA 421P",
+        score=94,
+    ),
+    Driver(
+        id="DRV-002",
+        name="Amina Odhiambo",
+        route="CBD - Umoja",
+        phone="+254700333444",
+        vehicle_plate="KCB 118L",
+        score=88,
+    ),
+    Driver(
+        id="DRV-003",
+        name="Brian Otieno",
+        route="CBD - Thika",
+        phone="+254700555666",
+        vehicle_plate="KDD 705Q",
+        score=62,
+    ),
+]
+
+reports: list[Report] = [
+    Report(
+        id="RPT-DEMO1",
+        category="reckless_driving",
+        route="CBD - Rongai",
+        vehicle_plate="KDA 421P",
+        description="Driver was overspeeding near Bomas stage.",
+        severity="high",
+        reporter_phone=None,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+]
+
+alerts: list[Alert] = [
+    Alert(
+        id="ALT-DEMO1",
+        report_id="RPT-DEMO1",
+        message="HIGH alert: reckless_driving on CBD - Rongai, vehicle KDA 421P.",
+        created_at=datetime.now(timezone.utc).isoformat(),
+        routed_to="+254711000999",
+    )
+]
+
+
+app = FastAPI(
+    title="SaccoPulse API",
+    description="Offline-first fleet governance and incentive platform demo.",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def create_manager_alert(report: Report) -> Alert:
+    alert = Alert(
+        id=f"ALT-{uuid4().hex[:8].upper()}",
+        report_id=report.id,
+        message=(
+            f"HIGH alert: {report.category.replace('_', ' ')} on {report.route}, "
+            f"vehicle {report.vehicle_plate}."
+        ),
+        created_at=now_iso(),
+        routed_to="+254711000999",
+    )
+    alerts.insert(0, alert)
+    return alert
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/api/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "service": "SaccoPulse API"}
+
+
+@app.get("/api/drivers", response_model=list[Driver])
+def list_drivers() -> list[Driver]:
+    return drivers
+
+
+@app.get("/api/reports", response_model=list[Report])
+def list_reports() -> list[Report]:
+    return reports
+
+
+@app.post("/api/reports", response_model=Report, status_code=201)
+def create_report(payload: ReportCreate) -> Report:
+    report = Report(
+        id=f"RPT-{uuid4().hex[:8].upper()}",
+        created_at=now_iso(),
+        **payload.model_dump(),
+    )
+    reports.insert(0, report)
+
+    matching_driver = next(
+        (driver for driver in drivers if driver.vehicle_plate.upper() == report.vehicle_plate.upper()),
+        None,
+    )
+    if matching_driver:
+        penalty = {"low": 3, "medium": 7, "high": 14}[report.severity]
+        matching_driver.score = max(0, matching_driver.score - penalty)
+
+    if report.severity == "high":
+        create_manager_alert(report)
+
+    return report
+
+
+@app.get("/api/alerts", response_model=list[Alert])
+def list_alerts() -> list[Alert]:
+    return alerts
+
+
+@app.post("/api/rewards/run", response_model=list[Driver])
+def run_rewards() -> list[Driver]:
+    for driver in drivers:
+        if driver.score >= 85:
+            driver.reward_status = "Airtime reward queued"
+        else:
+            driver.reward_status = "Needs improvement"
+    return drivers
+
+
+@app.post("/ussd", response_class=PlainTextResponse)
+def ussd_callback(
+    sessionId: Annotated[str, Form()],
+    serviceCode: Annotated[str, Form()],
+    phoneNumber: Annotated[str, Form()],
+    text: Annotated[str, Form()] = "",
+) -> str:
+    selections = text.split("*") if text else []
+
+    if text == "":
+        return (
+            "CON Welcome to SaccoPulse\n"
+            "1. Report overcharging\n"
+            "2. Report reckless driving\n"
+            "3. Report vehicle defect"
+        )
+
+    if len(selections) == 1:
+        return "CON Enter vehicle plate number"
+
+    if len(selections) == 2:
+        return "CON Enter route, for example CBD-Rongai"
+
+    if len(selections) == 3:
+        return "CON Severity\n1. Low\n2. Medium\n3. High"
+
+    if len(selections) >= 4:
+        category_map = {
+            "1": "overcharging",
+            "2": "reckless_driving",
+            "3": "vehicle_defect",
+        }
+        severity_map = {"1": "low", "2": "medium", "3": "high"}
+        category = category_map.get(selections[0])
+        severity = severity_map.get(selections[3])
+
+        if not category or not severity:
+            raise HTTPException(status_code=400, detail="Invalid USSD selection")
+
+        report = create_report(
+            ReportCreate(
+                category=category,
+                vehicle_plate=selections[1],
+                route=selections[2],
+                description=f"USSD report submitted by {phoneNumber}",
+                severity=severity,
+                reporter_phone=phoneNumber,
+            )
+        )
+        return f"END Thank you. Your anonymous report ID is {report.id}."
+
+    return "END Invalid request"

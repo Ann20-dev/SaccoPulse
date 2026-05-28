@@ -1,0 +1,267 @@
+:root {
+  --bg: #f4f7f4;
+  --ink: #18221d;
+  --muted: #5d6a63;
+  --panel: #ffffff;
+  --line: #d9e1dc;
+  --green: #1f7a4d;
+  --green-dark: #145a39;
+  --amber: #c87915;
+  --red: #bd3b35;
+  --blue: #276b9f;
+  --shadow: 0 18px 40px rgba(24, 34, 29, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.topbar {
+  align-items: center;
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px clamp(18px, 4vw, 56px);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.topbar h1,
+.section-title h2,
+.hero h2 {
+  margin: 0;
+}
+
+.topbar h1 {
+  font-size: 28px;
+}
+
+.eyebrow {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.layout {
+  display: grid;
+  gap: 24px;
+  padding: 24px clamp(18px, 4vw, 56px) 48px;
+}
+
+.hero {
+  align-items: stretch;
+  background: linear-gradient(135deg, #183326 0%, #25644b 52%, #d7a233 100%);
+  color: #ffffff;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  min-height: 320px;
+  overflow: hidden;
+  padding: clamp(26px, 5vw, 54px);
+}
+
+.hero .eyebrow {
+  color: #ffde8a;
+}
+
+.hero h2 {
+  font-size: clamp(34px, 5vw, 62px);
+  line-height: 1.02;
+  max-width: 860px;
+}
+
+.hero p {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 18px;
+  line-height: 1.55;
+  max-width: 760px;
+}
+
+.phone-panel {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+.phone-screen {
+  background: #111a16;
+  border: 10px solid #26312c;
+  border-radius: 26px;
+  box-shadow: var(--shadow);
+  color: #dff6e9;
+  min-height: 250px;
+  padding: 28px 24px;
+  width: min(100%, 320px);
+}
+
+.phone-screen span {
+  color: #ffde8a;
+  display: block;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+
+.grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.section-title {
+  margin-bottom: 20px;
+}
+
+label {
+  color: var(--muted);
+  display: grid;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+input,
+select,
+textarea {
+  background: #fbfdfb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  min-height: 44px;
+  padding: 11px 12px;
+  width: 100%;
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.two-columns {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.primary-button {
+  background: var(--green);
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 0 18px;
+}
+
+.primary-button:hover {
+  background: var(--green-dark);
+}
+
+.full {
+  width: 100%;
+}
+
+.status-text {
+  color: var(--green-dark);
+  font-size: 14px;
+  min-height: 20px;
+}
+
+.list {
+  display: grid;
+  gap: 12px;
+}
+
+.item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.item strong {
+  display: block;
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.badge {
+  border-radius: 999px;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  justify-content: center;
+  max-width: max-content;
+  padding: 5px 9px;
+}
+
+.badge.high,
+.badge.low-score {
+  background: var(--red);
+}
+
+.badge.medium {
+  background: var(--amber);
+}
+
+.badge.low,
+.badge.good-score {
+  background: var(--green);
+}
+
+.badge.info {
+  background: var(--blue);
+}
+
+@media (max-width: 860px) {
+  .topbar,
+  .hero,
+  .grid,
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .hero h2 {
+    font-size: 36px;
+  }
+}

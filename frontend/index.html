@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SaccoPulse</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Offline-first fleet governance</p>
+        <h1>SaccoPulse</h1>
+      </div>
+      <button id="rewardButton" class="primary-button" type="button">Run Airtime Rewards</button>
+    </header>
+
+    <main class="layout">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">USSD + SMS + Airtime API</p>
+          <h2>Accountability for Matatus and Boda Bodas without smartphones.</h2>
+          <p>
+            Commuters can report safety and fare violations from any mobile phone, while SACCO managers
+            receive high-severity alerts and reward compliant drivers.
+          </p>
+        </div>
+        <div class="phone-panel" aria-label="USSD preview">
+          <div class="phone-screen">
+            <span>*384*900#</span>
+            <p>1. Report overcharging</p>
+            <p>2. Report reckless driving</p>
+            <p>3. Report vehicle defect</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <form id="reportForm" class="panel">
+          <div class="section-title">
+            <p class="eyebrow">Commuter report</p>
+            <h2>Submit a violation</h2>
+          </div>
+
+          <label>
+            Category
+            <select name="category" required>
+              <option value="overcharging">Overcharging</option>
+              <option value="reckless_driving">Reckless driving</option>
+              <option value="vehicle_defect">Vehicle defect</option>
+              <option value="harassment">Harassment</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+
+          <div class="two-columns">
+            <label>
+              Route
+              <input name="route" type="text" value="CBD - Rongai" required />
+            </label>
+            <label>
+              Vehicle plate
+              <input name="vehicle_plate" type="text" value="KDA 421P" required />
+            </label>
+          </div>
+
+          <label>
+            Severity
+            <select name="severity" required>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+
+          <label>
+            Description
+            <textarea name="description" required>Driver was overcharging passengers during peak hours.</textarea>
+          </label>
+
+          <button class="primary-button full" type="submit">Submit Report</button>
+          <p id="formStatus" class="status-text" role="status"></p>
+        </form>
+
+        <section class="panel">
+          <div class="section-title">
+            <p class="eyebrow">Driver incentives</p>
+            <h2>Compliance leaderboard</h2>
+          </div>
+          <div id="driversList" class="list"></div>
+        </section>
+      </section>
+
+      <section class="grid">
+        <section class="panel">
+          <div class="section-title">
+            <p class="eyebrow">Manager SMS</p>
+            <h2>High-severity alerts</h2>
+          </div>
+          <div id="alertsList" class="list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-title">
+            <p class="eyebrow">Report log</p>
+            <h2>Recent submissions</h2>
+          </div>
+          <div id="reportsList" class="list"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
