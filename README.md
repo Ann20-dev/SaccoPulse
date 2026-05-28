@@ -73,6 +73,8 @@ MANAGER_PHONE_NUMBER=+254711000999
 
 When a commuter submits a complaint with a phone number, SaccoPulse queues an SMS confirmation. High-severity complaints also queue an SMS-style alert for the SACCO manager.
 
+If you see `401 Client Error: Unauthorized`, the API key and username do not match the selected Africa's Talking environment. Use `AFRICASTALKING_USERNAME=sandbox` with a sandbox key, or use your live username with a production key and `AFRICASTALKING_ENVIRONMENT=production`.
+
 ## Demo Endpoints
 
 - `POST /api/reports` creates a commuter report.

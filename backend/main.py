@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,17 @@ class Settings(BaseSettings):
 
 load_dotenv(BASE_DIR / ".env")
 settings = Settings()
+settings.africastalking_api_key = (
+    settings.africastalking_api_key
+    or os.getenv("SANDBOX_API_KEY")
+    or os.getenv("AT_API_KEY")
+    or os.getenv("API_KEY")
+)
+settings.africastalking_username = (
+    os.getenv("SANDBOX_USERNAME")
+    or os.getenv("AT_USERNAME")
+    or settings.africastalking_username
+)
 
 logging.basicConfig(
     level=settings.log_level.upper(),
@@ -174,6 +186,10 @@ def send_sms(phone_number: str, message: str) -> bool:
         logger.warning("SMS not sent to %s because AFRICASTALKING_API_KEY is missing", phone_number)
         return False
 
+    if settings.africastalking_environment == "sandbox" and settings.africastalking_username != "sandbox":
+        logger.error("Sandbox SMS requires AFRICASTALKING_USERNAME=sandbox")
+        return False
+
     data = {
         "username": settings.africastalking_username,
         "to": normalize_phone_number(phone_number),
@@ -196,6 +212,20 @@ def send_sms(phone_number: str, message: str) -> bool:
         response.raise_for_status()
         logger.info("SMS sent to %s with status %s", data["to"], response.status_code)
         return True
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else "unknown"
+        response_text = exc.response.text[:500] if exc.response is not None else ""
+        if status_code == 401:
+            logger.error(
+                "Africa's Talking rejected SMS credentials. Check that username=%s matches environment=%s "
+                "and that the API key came from the same Africa's Talking dashboard. Response: %s",
+                settings.africastalking_username,
+                settings.africastalking_environment,
+                response_text,
+            )
+        else:
+            logger.error("Failed to send SMS to %s: %s. Response: %s", data["to"], exc, response_text)
+        return False
     except requests.RequestException as exc:
         logger.error("Failed to send SMS to %s: %s", data["to"], exc)
         return False
