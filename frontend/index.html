@@ -113,6 +113,25 @@
           <div id="reportsList" class="list"></div>
         </section>
       </section>
+
+      <section class="panel">
+        <div class="section-title dashboard-title">
+          <div>
+            <p class="eyebrow">Africa's Talking inbox</p>
+            <h2>SMS reports admin dashboard</h2>
+          </div>
+          <button id="fetchSmsButton" class="primary-button" type="button">Fetch SMS Reports</button>
+        </div>
+        <div class="filter-row" aria-label="SMS report status filters">
+          <button class="filter-button sms-filter active" type="button" data-status="">All</button>
+          <button class="filter-button sms-filter" type="button" data-status="New">New</button>
+          <button class="filter-button sms-filter" type="button" data-status="In Review">In Review</button>
+          <button class="filter-button sms-filter" type="button" data-status="Actioned">Actioned</button>
+          <button class="filter-button sms-filter" type="button" data-status="Dismissed">Dismissed</button>
+        </div>
+        <p id="smsFetchStatus" class="status-text" role="status"></p>
+        <div id="smsReportsList" class="list"></div>
+      </section>
     </main>
 
     <script src="/static/app.js"></script>

@@ -1,11 +1,18 @@
 import logging
 import os
+import json
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
 from typing import Annotated, Literal
 from uuid import uuid4
+
+try:
+    import africastalking
+except ImportError:
+    africastalking = None
 
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +26,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+DATABASE_PATH = BASE_DIR / "saccopulse.db"
+SmsActionStatus = Literal["New", "In Review", "Actioned", "Dismissed"]
 
 
 class Settings(BaseSettings):
@@ -99,6 +108,22 @@ class Alert(BaseModel):
     routed_to: str
 
 
+class AtsSmsMessage(BaseModel):
+    id: int
+    at_message_id: str
+    sender: str
+    recipient: str | None = None
+    text: str
+    received_at: str | None = None
+    fetched_at: str
+    status: SmsActionStatus = "New"
+    raw_payload: str
+
+
+class SmsStatusUpdate(BaseModel):
+    status: SmsActionStatus
+
+
 drivers: list[Driver] = [
     Driver(
         id="DRV-001",
@@ -170,6 +195,137 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def get_connection() -> sqlite3.Connection:
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def init_database() -> None:
+    with get_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ats_sms_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at_message_id TEXT UNIQUE NOT NULL,
+                sender TEXT NOT NULL,
+                recipient TEXT,
+                text TEXT NOT NULL,
+                received_at TEXT,
+                fetched_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'New',
+                raw_payload TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+
+
+def get_app_state(key: str, default: str = "0") -> str:
+    with get_connection() as connection:
+        row = connection.execute("SELECT value FROM app_state WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_app_state(key: str, value: str) -> None:
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO app_state (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, value),
+        )
+
+
+def row_to_ats_sms(row: sqlite3.Row) -> AtsSmsMessage:
+    return AtsSmsMessage(**dict(row))
+
+
+def save_ats_sms_message(message: dict) -> bool:
+    at_message_id = str(message.get("id") or uuid4().hex)
+    sender = str(message.get("from") or message.get("sender") or "Unknown")
+    recipient = message.get("to") or message.get("recipient")
+    text = str(message.get("text") or message.get("message") or "")
+    received_at = message.get("date") or message.get("receivedAt") or message.get("createdAt")
+
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO ats_sms_messages (
+                at_message_id, sender, recipient, text, received_at, fetched_at, raw_payload
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                at_message_id,
+                sender,
+                recipient,
+                text,
+                str(received_at) if received_at else None,
+                now_iso(),
+                json.dumps(message, default=str),
+            ),
+        )
+    return cursor.rowcount > 0
+
+
+def fetch_ats_sms_messages() -> dict[str, int | str]:
+    if africastalking is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Install africastalking with: pip install -r requirements.txt",
+        )
+    if not settings.africastalking_api_key:
+        raise HTTPException(status_code=400, detail="Missing Africa's Talking API key")
+    if settings.africastalking_environment == "sandbox" and settings.africastalking_username != "sandbox":
+        raise HTTPException(status_code=400, detail="Sandbox fetch requires AFRICASTALKING_USERNAME=sandbox")
+
+    africastalking.initialize(settings.africastalking_username, settings.africastalking_api_key)
+    sms_service = africastalking.SMS
+
+    last_received_id = int(get_app_state("ats_last_received_id", "0"))
+    fetched_count = 0
+    saved_count = 0
+
+    try:
+        while True:
+            message_data = sms_service.fetch_messages(last_received_id)
+            messages = message_data.get("SMSMessageData", {}).get("Messages", [])
+            if not messages:
+                break
+
+            fetched_count += len(messages)
+            for message in messages:
+                if save_ats_sms_message(message):
+                    saved_count += 1
+                if message.get("id") is not None:
+                    last_received_id = max(last_received_id, int(message["id"]))
+
+            set_app_state("ats_last_received_id", str(last_received_id))
+    except Exception as exc:
+        logger.error("Failed to fetch Africa's Talking SMS inbox: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Failed to fetch SMS inbox: {exc}") from exc
+
+    return {
+        "status": "ok",
+        "fetched": fetched_count,
+        "saved": saved_count,
+        "last_received_id": last_received_id,
+    }
+
+
+init_database()
 
 
 def normalize_phone_number(phone_number: str) -> str:
@@ -313,6 +469,39 @@ def create_report(payload: ReportCreate) -> Report:
 @app.get("/api/alerts", response_model=list[Alert])
 def list_alerts() -> list[Alert]:
     return alerts
+
+
+@app.post("/api/ats-sms/fetch")
+def fetch_ats_sms() -> dict[str, int | str]:
+    return fetch_ats_sms_messages()
+
+
+@app.get("/api/ats-sms/messages", response_model=list[AtsSmsMessage])
+def list_ats_sms_messages(status: SmsActionStatus | None = None) -> list[AtsSmsMessage]:
+    with get_connection() as connection:
+        if status:
+            rows = connection.execute(
+                "SELECT * FROM ats_sms_messages WHERE status = ? ORDER BY id DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = connection.execute("SELECT * FROM ats_sms_messages ORDER BY id DESC").fetchall()
+    return [row_to_ats_sms(row) for row in rows]
+
+
+@app.patch("/api/ats-sms/messages/{message_id}/status", response_model=AtsSmsMessage)
+def update_ats_sms_status(message_id: int, payload: SmsStatusUpdate) -> AtsSmsMessage:
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE ats_sms_messages SET status = ? WHERE id = ?",
+            (payload.status, message_id),
+        )
+        row = connection.execute("SELECT * FROM ats_sms_messages WHERE id = ?", (message_id,)).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="SMS report not found")
+
+    return row_to_ats_sms(row)
 
 
 @app.post("/api/rewards/run", response_model=list[Driver])
