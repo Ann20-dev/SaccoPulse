@@ -107,8 +107,15 @@
 
         <section class="panel">
           <div class="section-title">
-            <p class="eyebrow">Report log</p>
-            <h2>Recent submissions</h2>
+            <p class="eyebrow">Admin dashboard</p>
+            <h2>Reports by action status</h2>
+          </div>
+          <div class="filter-row" aria-label="Report status filters">
+            <button class="filter-button active" type="button" data-status="">All</button>
+            <button class="filter-button" type="button" data-status="New">New</button>
+            <button class="filter-button" type="button" data-status="In Review">In Review</button>
+            <button class="filter-button" type="button" data-status="Actioned">Actioned</button>
+            <button class="filter-button" type="button" data-status="Dismissed">Dismissed</button>
           </div>
           <div id="reportsList" class="list"></div>
         </section>

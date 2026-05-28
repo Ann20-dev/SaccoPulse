@@ -196,6 +196,37 @@ textarea {
   min-height: 20px;
 }
 
+.filter-row,
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-row {
+  margin-bottom: 16px;
+}
+
+.filter-button,
+.action-row button {
+  background: #eef4f0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.filter-button.active,
+.action-row button:hover {
+  background: var(--green);
+  border-color: var(--green);
+  color: #ffffff;
+}
+
 .list {
   display: grid;
   gap: 12px;
