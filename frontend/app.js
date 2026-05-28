@@ -4,8 +4,6 @@ const driversList = document.querySelector("#driversList");
 const alertsList = document.querySelector("#alertsList");
 const reportsList = document.querySelector("#reportsList");
 const rewardButton = document.querySelector("#rewardButton");
-const filterButtons = document.querySelectorAll(".filter-button");
-let activeReportStatus = "";
 
 const api = {
   drivers: "/api/drivers",
@@ -33,13 +31,6 @@ function scoreBadge(score) {
   return "low-score";
 }
 
-function statusBadge(status) {
-  if (status === "Actioned") return "good-score";
-  if (status === "In Review") return "info";
-  if (status === "Dismissed") return "low-score";
-  return "medium";
-}
-
 function renderEmpty(container, message) {
   container.innerHTML = `<div class="item"><p class="meta">${message}</p></div>`;
 }
@@ -65,12 +56,11 @@ async function loadDrivers() {
 }
 
 async function loadReports() {
-  const statusQuery = activeReportStatus ? `?status=${encodeURIComponent(activeReportStatus)}` : "";
-  const response = await fetch(`${api.reports}${statusQuery}`);
+  const response = await fetch(api.reports);
   const reports = await response.json();
 
   if (!reports.length) {
-    renderEmpty(reportsList, "No reports match this status.");
+    renderEmpty(reportsList, "No commuter reports yet.");
     return;
   }
 
@@ -83,29 +73,13 @@ async function loadReports() {
             <span class="meta">${report.route} | ${report.vehicle_plate}</span>
           </div>
           <span class="badge ${report.severity}">${titleCase(report.severity)}</span>
-          <span class="badge ${statusBadge(report.status)}">${report.status}</span>
           <p class="meta">${report.description}</p>
-          <span class="meta">Reporter: ${report.reporter_phone}</span>
           <span class="meta">Confirmation: ${report.confirmation_status}</span>
           <span class="meta">${formatDate(report.created_at)}</span>
-          <div class="action-row">
-            <button type="button" data-report-id="${report.id}" data-next-status="In Review">Review</button>
-            <button type="button" data-report-id="${report.id}" data-next-status="Actioned">Actioned</button>
-            <button type="button" data-report-id="${report.id}" data-next-status="Dismissed">Dismiss</button>
-          </div>
         </article>
       `
     )
     .join("");
-}
-
-async function updateReportStatus(reportId, status) {
-  await fetch(`${api.reports}/${reportId}/status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-  await loadReports();
 }
 
 async function loadAlerts() {
@@ -160,23 +134,6 @@ form.addEventListener("submit", async (event) => {
       : `Report ${report.id} submitted. Confirmation SMS queued.`;
 
   await refreshDashboard();
-});
-
-filterButtons.forEach((button) => {
-  button.addEventListener("click", async () => {
-    filterButtons.forEach((filterButton) => filterButton.classList.remove("active"));
-    button.classList.add("active");
-    activeReportStatus = button.dataset.status;
-    await loadReports();
-  });
-});
-
-reportsList.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-report-id]");
-  if (!button) return;
-
-  button.disabled = true;
-  await updateReportStatus(button.dataset.reportId, button.dataset.nextStatus);
 });
 
 rewardButton.addEventListener("click", async () => {

@@ -18,5 +18,3 @@ build/
 Thumbs.db
 
 *.log
-*.db
-*.db-journal

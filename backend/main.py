@@ -1,5 +1,4 @@
 import logging
-import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,8 +18,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
-DATABASE_PATH = BASE_DIR / "saccopulse.db"
-ReportStatus = Literal["New", "In Review", "Actioned", "Dismissed"]
 
 
 class Settings(BaseSettings):
@@ -78,12 +75,8 @@ class ReportCreate(BaseModel):
 class Report(ReportCreate):
     id: str
     created_at: str
-    status: ReportStatus = "New"
+    status: str = "New"
     confirmation_status: str = "Not queued"
-
-
-class ReportStatusUpdate(BaseModel):
-    status: ReportStatus
 
 
 class Alert(BaseModel):
@@ -121,6 +114,31 @@ drivers: list[Driver] = [
     ),
 ]
 
+reports: list[Report] = [
+    Report(
+        id="RPT-DEMO1",
+        category="reckless_driving",
+        route="CBD - Rongai",
+        vehicle_plate="KDA 421P",
+        description="Driver was overspeeding near Bomas stage.",
+        severity="high",
+        reporter_phone="+254700000000",
+        created_at=datetime.now(timezone.utc).isoformat(),
+        confirmation_status="Demo only",
+    )
+]
+
+alerts: list[Alert] = [
+    Alert(
+        id="ALT-DEMO1",
+        report_id="RPT-DEMO1",
+        message="HIGH alert: reckless_driving on CBD - Rongai, vehicle KDA 421P.",
+        created_at=datetime.now(timezone.utc).isoformat(),
+        routed_to="+254711000999",
+    )
+]
+
+
 app = FastAPI(
     title="SaccoPulse API",
     description="Offline-first fleet governance and incentive platform demo.",
@@ -140,143 +158,6 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def get_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(DATABASE_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
-def init_database() -> None:
-    with get_connection() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS reports (
-                id TEXT PRIMARY KEY,
-                category TEXT NOT NULL,
-                route TEXT NOT NULL,
-                vehicle_plate TEXT NOT NULL,
-                description TEXT NOT NULL,
-                severity TEXT NOT NULL,
-                reporter_phone TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'New',
-                confirmation_status TEXT NOT NULL DEFAULT 'Not queued',
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS alerts (
-                id TEXT PRIMARY KEY,
-                report_id TEXT NOT NULL,
-                message TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                routed_to TEXT NOT NULL,
-                FOREIGN KEY (report_id) REFERENCES reports (id)
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sms_queries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sender TEXT NOT NULL,
-                message TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                source TEXT NOT NULL DEFAULT 'callback'
-            )
-            """
-        )
-        seed_count = connection.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
-        if seed_count == 0:
-            connection.execute(
-                """
-                INSERT INTO reports (
-                    id, category, route, vehicle_plate, description, severity,
-                    reporter_phone, status, confirmation_status, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "RPT-DEMO1",
-                    "reckless_driving",
-                    "CBD - Rongai",
-                    "KDA 421P",
-                    "Driver was overspeeding near Bomas stage.",
-                    "high",
-                    "+254700000000",
-                    "New",
-                    "Demo only",
-                    now_iso(),
-                ),
-            )
-            connection.execute(
-                """
-                INSERT INTO alerts (id, report_id, message, created_at, routed_to)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    "ALT-DEMO1",
-                    "RPT-DEMO1",
-                    "HIGH alert: reckless_driving on CBD - Rongai, vehicle KDA 421P.",
-                    now_iso(),
-                    settings.manager_phone_number,
-                ),
-            )
-
-
-def row_to_report(row: sqlite3.Row) -> Report:
-    return Report(**dict(row))
-
-
-def row_to_alert(row: sqlite3.Row) -> Alert:
-    return Alert(**dict(row))
-
-
-def save_report(report: Report) -> None:
-    with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO reports (
-                id, category, route, vehicle_plate, description, severity,
-                reporter_phone, status, confirmation_status, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                report.id,
-                report.category,
-                report.route,
-                report.vehicle_plate,
-                report.description,
-                report.severity,
-                report.reporter_phone,
-                report.status,
-                report.confirmation_status,
-                report.created_at,
-            ),
-        )
-
-
-def update_report_confirmation_status(report_id: str, confirmation_status: str) -> None:
-    with get_connection() as connection:
-        connection.execute(
-            "UPDATE reports SET confirmation_status = ? WHERE id = ?",
-            (confirmation_status, report_id),
-        )
-
-
-def save_alert(alert: Alert) -> None:
-    with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO alerts (id, report_id, message, created_at, routed_to)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (alert.id, alert.report_id, alert.message, alert.created_at, alert.routed_to),
-        )
 
 
 def normalize_phone_number(phone_number: str) -> str:
@@ -332,13 +213,11 @@ def queue_report_confirmation(report: Report) -> None:
     )
     if not settings.africastalking_api_key:
         report.confirmation_status = "SMS disabled: missing API key"
-        update_report_confirmation_status(report.id, report.confirmation_status)
         logger.warning("Confirmation SMS for %s was not queued because the API key is missing", report.id)
         return
 
     send_sms_async(report.reporter_phone, message)
     report.confirmation_status = "SMS queued"
-    update_report_confirmation_status(report.id, report.confirmation_status)
 
 
 def create_manager_alert(report: Report) -> Alert:
@@ -352,20 +231,9 @@ def create_manager_alert(report: Report) -> Alert:
         created_at=now_iso(),
         routed_to="+254711000999",
     )
-    save_alert(alert)
+    alerts.insert(0, alert)
     send_sms_async(settings.manager_phone_number, alert.message)
     return alert
-
-
-def save_sms_query(sender: str, message: str, source: str = "callback") -> None:
-    with get_connection() as connection:
-        connection.execute(
-            "INSERT INTO sms_queries (sender, message, created_at, source) VALUES (?, ?, ?, ?)",
-            (sender, message, now_iso(), source),
-        )
-
-
-init_database()
 
 
 @app.get("/")
@@ -384,16 +252,8 @@ def list_drivers() -> list[Driver]:
 
 
 @app.get("/api/reports", response_model=list[Report])
-def list_reports(status: ReportStatus | None = None) -> list[Report]:
-    with get_connection() as connection:
-        if status:
-            rows = connection.execute(
-                "SELECT * FROM reports WHERE status = ? ORDER BY created_at DESC",
-                (status,),
-            ).fetchall()
-        else:
-            rows = connection.execute("SELECT * FROM reports ORDER BY created_at DESC").fetchall()
-    return [row_to_report(row) for row in rows]
+def list_reports() -> list[Report]:
+    return reports
 
 
 @app.post("/api/reports", response_model=Report, status_code=201)
@@ -403,7 +263,7 @@ def create_report(payload: ReportCreate) -> Report:
         created_at=now_iso(),
         **payload.model_dump(),
     )
-    save_report(report)
+    reports.insert(0, report)
     queue_report_confirmation(report)
 
     matching_driver = next(
@@ -420,51 +280,9 @@ def create_report(payload: ReportCreate) -> Report:
     return report
 
 
-@app.patch("/api/reports/{report_id}/status", response_model=Report)
-def update_report_status(report_id: str, payload: ReportStatusUpdate) -> Report:
-    with get_connection() as connection:
-        connection.execute(
-            "UPDATE reports SET status = ? WHERE id = ?",
-            (payload.status, report_id),
-        )
-        row = connection.execute("SELECT * FROM reports WHERE id = ?", (report_id,)).fetchone()
-
-    if not row:
-        raise HTTPException(status_code=404, detail="Report not found")
-
-    return row_to_report(row)
-
-
 @app.get("/api/alerts", response_model=list[Alert])
 def list_alerts() -> list[Alert]:
-    with get_connection() as connection:
-        rows = connection.execute("SELECT * FROM alerts ORDER BY created_at DESC").fetchall()
-    return [row_to_alert(row) for row in rows]
-
-
-@app.post("/sms_callback")
-def sms_callback(
-    sender: Annotated[str | None, Form(alias="from")] = None,
-    text: Annotated[str | None, Form()] = None,
-) -> dict[str, str]:
-    if not sender or not text:
-        raise HTTPException(status_code=400, detail="Missing sender or text")
-
-    normalized_sender = normalize_phone_number(sender)
-    save_sms_query(normalized_sender, text)
-
-    confirmation = "SaccoPulse has received your message. A SACCO manager will review it."
-    send_sms_async(normalized_sender, confirmation)
-    return {"status": "accepted"}
-
-
-@app.get("/api/sms-queries")
-def list_sms_queries() -> list[dict[str, str]]:
-    with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT id, sender, message, created_at, source FROM sms_queries ORDER BY created_at DESC"
-        ).fetchall()
-    return [dict(row) for row in rows]
+    return alerts
 
 
 @app.post("/api/rewards/run", response_model=list[Driver])
