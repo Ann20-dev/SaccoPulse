@@ -47,6 +47,32 @@ API docs are available at:
 http://127.0.0.1:8000/docs
 ```
 
+## SMS Setup
+
+Copy `.env.example` to `.env`, then add your Africa's Talking API key.
+
+Sandbox example:
+
+```env
+AFRICASTALKING_API_KEY=your_sandbox_api_key
+AFRICASTALKING_USERNAME=sandbox
+AFRICASTALKING_ENVIRONMENT=sandbox
+SMS_SHORTCODE=90875
+MANAGER_PHONE_NUMBER=+254711000999
+```
+
+Production example:
+
+```env
+AFRICASTALKING_API_KEY=your_live_api_key
+AFRICASTALKING_USERNAME=your_live_username
+AFRICASTALKING_ENVIRONMENT=production
+SMS_SHORTCODE=your_approved_shortcode_or_sender_id
+MANAGER_PHONE_NUMBER=+254711000999
+```
+
+When a commuter submits a complaint with a phone number, SaccoPulse queues an SMS confirmation. High-severity complaints also queue an SMS-style alert for the SACCO manager.
+
 ## Demo Endpoints
 
 - `POST /api/reports` creates a commuter report.
@@ -55,4 +81,3 @@ http://127.0.0.1:8000/docs
 - `GET /api/drivers` lists drivers and compliance scores.
 - `POST /api/rewards/run` simulates airtime rewards for high-scoring drivers.
 - `POST /ussd` simulates an Africa's Talking USSD callback.
-

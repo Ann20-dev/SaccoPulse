@@ -1,5 +1,8 @@
+import logging
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Thread
 from typing import Annotated, Literal
 from uuid import uuid4
 
@@ -7,11 +10,47 @@ from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+import requests
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+
+
+class Settings(BaseSettings):
+    africastalking_api_key: str | None = None
+    africastalking_username: str = "sandbox"
+    africastalking_environment: Literal["sandbox", "production"] = "sandbox"
+    sms_shortcode: str = "90875"
+    manager_phone_number: str = "+254711000999"
+    log_level: str = "INFO"
+
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    @property
+    def messaging_url(self) -> str:
+        if self.africastalking_environment == "production":
+            return "https://api.africastalking.com/version1/messaging"
+        return "https://api.sandbox.africastalking.com/version1/messaging"
+
+
+load_dotenv(BASE_DIR / ".env")
+settings = Settings()
+
+logging.basicConfig(
+    level=settings.log_level.upper(),
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
+)
+logger = logging.getLogger("saccopulse.sms")
 
 
 class Driver(BaseModel):
@@ -30,13 +69,14 @@ class ReportCreate(BaseModel):
     vehicle_plate: str = Field(min_length=3, max_length=20)
     description: str = Field(min_length=5, max_length=400)
     severity: Literal["low", "medium", "high"]
-    reporter_phone: str | None = Field(default=None, max_length=30)
+    reporter_phone: str = Field(min_length=9, max_length=30)
 
 
 class Report(ReportCreate):
     id: str
     created_at: str
     status: str = "New"
+    confirmation_status: str = "Not queued"
 
 
 class Alert(BaseModel):
@@ -82,8 +122,9 @@ reports: list[Report] = [
         vehicle_plate="KDA 421P",
         description="Driver was overspeeding near Bomas stage.",
         severity="high",
-        reporter_phone=None,
+        reporter_phone="+254700000000",
         created_at=datetime.now(timezone.utc).isoformat(),
+        confirmation_status="Demo only",
     )
 ]
 
@@ -119,6 +160,66 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def normalize_phone_number(phone_number: str) -> str:
+    cleaned = phone_number.strip().replace(" ", "")
+    if cleaned.startswith("+"):
+        return cleaned
+    if cleaned.startswith("0"):
+        return f"+254{cleaned[1:]}"
+    return f"+{cleaned}"
+
+
+def send_sms(phone_number: str, message: str) -> bool:
+    if not settings.africastalking_api_key:
+        logger.warning("SMS not sent to %s because AFRICASTALKING_API_KEY is missing", phone_number)
+        return False
+
+    data = {
+        "username": settings.africastalking_username,
+        "to": normalize_phone_number(phone_number),
+        "message": message,
+        "from": settings.sms_shortcode,
+    }
+    headers = {
+        "apiKey": settings.africastalking_api_key,
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+    try:
+        response = requests.post(
+            settings.messaging_url,
+            headers=headers,
+            data=data,
+            timeout=10,
+        )
+        response.raise_for_status()
+        logger.info("SMS sent to %s with status %s", data["to"], response.status_code)
+        return True
+    except requests.RequestException as exc:
+        logger.error("Failed to send SMS to %s: %s", data["to"], exc)
+        return False
+
+
+def send_sms_async(phone_number: str, message: str) -> None:
+    thread = Thread(target=send_sms, args=(phone_number, message), daemon=True)
+    thread.start()
+
+
+def queue_report_confirmation(report: Report) -> None:
+    message = (
+        f"SaccoPulse has received your complaint {report.id}. "
+        "Thank you for helping improve commuter safety."
+    )
+    if not settings.africastalking_api_key:
+        report.confirmation_status = "SMS disabled: missing API key"
+        logger.warning("Confirmation SMS for %s was not queued because the API key is missing", report.id)
+        return
+
+    send_sms_async(report.reporter_phone, message)
+    report.confirmation_status = "SMS queued"
+
+
 def create_manager_alert(report: Report) -> Alert:
     alert = Alert(
         id=f"ALT-{uuid4().hex[:8].upper()}",
@@ -131,6 +232,7 @@ def create_manager_alert(report: Report) -> Alert:
         routed_to="+254711000999",
     )
     alerts.insert(0, alert)
+    send_sms_async(settings.manager_phone_number, alert.message)
     return alert
 
 
@@ -162,6 +264,7 @@ def create_report(payload: ReportCreate) -> Report:
         **payload.model_dump(),
     )
     reports.insert(0, report)
+    queue_report_confirmation(report)
 
     matching_driver = next(
         (driver for driver in drivers if driver.vehicle_plate.upper() == report.vehicle_plate.upper()),

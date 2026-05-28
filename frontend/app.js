@@ -74,6 +74,7 @@ async function loadReports() {
           </div>
           <span class="badge ${report.severity}">${titleCase(report.severity)}</span>
           <p class="meta">${report.description}</p>
+          <span class="meta">Confirmation: ${report.confirmation_status}</span>
           <span class="meta">${formatDate(report.created_at)}</span>
         </article>
       `
@@ -129,8 +130,8 @@ form.addEventListener("submit", async (event) => {
   const report = await response.json();
   formStatus.textContent =
     report.severity === "high"
-      ? `Report ${report.id} submitted and manager SMS alert queued.`
-      : `Report ${report.id} submitted.`;
+      ? `Report ${report.id} submitted. Confirmation and manager SMS queued.`
+      : `Report ${report.id} submitted. Confirmation SMS queued.`;
 
   await refreshDashboard();
 });
